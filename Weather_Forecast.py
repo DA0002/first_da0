@@ -10,7 +10,7 @@ from datetime import timedelta
 import requests
 import logging
 import psycopg2
-
+import json
 
 
 def get_Redshift_connection(autocommit=False):
@@ -24,7 +24,11 @@ def extract(**context):
     lat = 36.976847
     lon = 127.913131
     key = context["params"]["api_key"]
-    url = context["params"]["api"]
+    url = context["params"]["api"].format(lat =lat, lon=lon, key=key)
+    #key = "2d61882f7e74a4787667e1de1e8004b1"
+    #url = "https://api.openweathermap.org/data/2.5/onecall?lat={lat}&lon={lon}&appid={key}&units=metric".format(lat=lat, lon = lon, key=key)
+
+
     task_instance = context['task_instance']
     execution_date = context['execution_date']
 
@@ -37,7 +41,8 @@ def extract(**context):
 
 def transform(**context):
     text = context["task_instance"].xcom_pull(key="return_value", task_ids="extract")
-    return text.json()["daily"]
+
+    return text["daily"]
 
 
 def load(**context):
@@ -46,7 +51,7 @@ def load(**context):
     
     cur = get_Redshift_connection()
     lines = context["task_instance"].xcom_pull(key="return_value", task_ids="transform")
-    sql = "BEGIN; DROP TABLE IF EXISTS {schema}.{table}; CREAT TABLE {schema}.{table} (date date primary key, temp float, min_temp float, max_temp float);".format(schema=schema, table=table)
+    sql = "BEGIN; DROP TABLE IF EXISTS {schema}.{table}; CREATE TABLE {schema}.{table} (date date primary key, temp float, min_temp float, max_temp float);".format(schema=schema, table=table)
     for line in lines:
         date = datetime.fromtimestamp(line["dt"]).strftime('%Y-%m-%d')
         temp_day = line["temp"]["day"]
@@ -77,7 +82,7 @@ extract = PythonOperator(
     task_id = 'extract',
     python_callable = extract,
     params = {
-        'api':  Variable.get("open_weather_api")
+        'api':  Variable.get("open_weather_api"),
         'api_key' : Variable.get("open_weather_api_key")
     },
     dag = dag_second_assignment)
